@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coach du Soir — 5 min</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
+  :root{
+    --bg:#0d1117; --surface:#161b22; --border:#21262d;
+    --accent:#7ee8a2; --accent2:#80cbc4; --accent3:#f48fb1;
+    --text:#e6edf3; --muted:#8b949e; --rest:#f0c060;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif;
+        min-height:100vh; display:flex; flex-direction:column;
+        align-items:center; justify-content:center; padding:20px; }
+  body::before{ content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:radial-gradient(ellipse 60% 40% at 20% 20%,rgba(126,232,162,.06) 0%,transparent 70%),
+               radial-gradient(ellipse 50% 40% at 80% 80%,rgba(128,203,196,.05) 0%,transparent 70%); }
+  .container{ position:relative; z-index:1; width:100%; max-width:460px;
+              display:flex; flex-direction:column; align-items:center; gap:20px; }
+  .header{ text-align:center; }
+  .header h1{ font-family:'DM Serif Display',serif; font-size:clamp(1.6rem,5vw,2.1rem);
+              font-weight:400; letter-spacing:-.02em; }
+  .header h1 em{ font-style:italic; color:var(--accent); }
+  .header p{ font-size:.8rem; color:var(--muted); margin-top:4px; letter-spacing:.06em; text-transform:uppercase; }
+  .progress-bar-wrap{ width:100%; height:3px; background:var(--border); border-radius:99px; overflow:hidden; }
+  .progress-bar-fill{ height:100%; background:linear-gradient(90deg,var(--accent),var(--accent2));
+                      border-radius:99px; transition:width .5s linear; width:0%; }
+  .phase-badge{ display:inline-flex; align-items:center; gap:8px; padding:5px 14px;
+                border-radius:99px; font-size:.72rem; font-weight:500; letter-spacing:.08em;
+                text-transform:uppercase; border:1px solid var(--border); color:var(--muted); transition:all .4s; }
+  .phase-badge.abdo { border-color:rgba(126,232,162,.3); color:var(--accent); }
+  .phase-badge.dos  { border-color:rgba(128,203,196,.3); color:var(--accent2); }
+  .phase-badge.nuque{ border-color:rgba(244,143,177,.3); color:var(--accent3); }
+  .phase-badge.rest { border-color:rgba(240,192,96,.3);  color:var(--rest); }
+  .phase-dot{ width:6px; height:6px; border-radius:50%; background:currentColor;
+              animation:blink 1.5s ease-in-out infinite; }
+  @keyframes blink{ 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.7)} }
+  .card{ width:100%; background:var(--surface); border:1px solid var(--border);
+         border-radius:20px; padding:28px 24px; text-align:center; position:relative;
+         overflow:hidden; min-height:280px; display:flex; flex-direction:column;
+         align-items:center; justify-content:center; }
+  .card::after{ content:''; position:absolute; top:0; left:0; right:0; height:1px;
+                background:linear-gradient(90deg,transparent,rgba(126,232,162,.2),transparent); }
+  /* ── vues ── */
+  .view{ width:100%; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .view.hidden{ display:none; }
+  /* exercice */
+  .ex-name{ font-family:'DM Serif Display',serif; font-size:clamp(1.3rem,5vw,1.8rem);
+            font-weight:400; line-height:1.2; transition:opacity .25s; }
+  .ex-desc{ font-size:.82rem; color:var(--muted); line-height:1.6; transition:opacity .25s; }
+  /* repos */
+  .rest-emoji{ font-size:2.4rem; line-height:1; }
+  .rest-title{ font-family:'DM Serif Display',serif; font-size:1.6rem; font-weight:400; color:var(--rest); }
+  .rest-hint { font-size:.82rem; color:var(--muted); }
+  /* fin */
+  .fin-emoji{ font-size:2.8rem; }
+  .fin-title{ font-family:'DM Serif Display',serif; font-size:1.7rem; font-weight:400; }
+  .fin-desc { font-size:.86rem; color:var(--muted); line-height:1.6; }
+  /* timer */
+  .timer-wrap{ margin-top:18px; position:relative; width:120px; height:120px; }
+  .timer-svg{ width:120px; height:120px; transform:rotate(-90deg); }
+  .timer-bg  { fill:none; stroke:var(--border); stroke-width:6; }
+  .timer-ring{ fill:none; stroke-width:6; stroke-linecap:round;
+               stroke-dasharray:339.3; stroke-dashoffset:0;
+               transition:stroke-dashoffset 1s linear, stroke .3s; stroke:var(--accent); }
+  .ring-rest  { stroke:var(--rest); }
+  .ring-ending{ stroke:var(--accent3); }
+  .timer-num{ position:absolute; inset:0; display:flex; flex-direction:column;
+              align-items:center; justify-content:center;
+              font-family:'DM Serif Display',serif; font-size:2.4rem; line-height:1; }
+  .timer-num.ending{ color:var(--accent3); }
+  .timer-lbl{ font-family:'DM Sans',sans-serif; font-size:.6rem; color:var(--muted);
+              letter-spacing:.1em; text-transform:uppercase; margin-top:2px; }
+  /* dots */
+  .steps-wrap{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+  .step-dot{ width:7px; height:7px; border-radius:50%; background:var(--border); transition:all .3s; }
+  .step-dot.done  { background:var(--accent); }
+  .step-dot.active{ background:var(--accent); transform:scale(1.6); }
+  /* voice */
+  .voice-row{ display:flex; align-items:center; gap:8px; font-size:.76rem; color:var(--muted);
+              padding:7px 14px; background:var(--surface); border:1px solid var(--border);
+              border-radius:8px; width:100%; justify-content:center; }
+  .vbars{ display:flex; gap:2px; align-items:center; height:14px; }
+  .vbar{ width:2px; background:var(--accent); border-radius:1px; opacity:.25;
+         animation:va .8s ease-in-out infinite alternate; }
+  .vbar:nth-child(1){ height:4px;  animation-delay:0s; }
+  .vbar:nth-child(2){ height:9px;  animation-delay:.15s; }
+  .vbar:nth-child(3){ height:13px; animation-delay:.3s; }
+  .vbar:nth-child(4){ height:9px;  animation-delay:.15s; }
+  .vbar:nth-child(5){ height:4px;  animation-delay:0s; }
+  .vbars.on .vbar{ opacity:1; }
+  @keyframes va{ from{transform:scaleY(.3)} to{transform:scaleY(1)} }
+  /* controls */
+  .controls{ display:flex; gap:10px; align-items:center; width:100%; }
+  .btn-main{ flex:1; padding:15px 20px; background:var(--accent); color:#0d1117; border:none;
+             border-radius:12px; font-family:'DM Sans',sans-serif; font-size:.92rem;
+             font-weight:500; cursor:pointer; transition:all .2s; }
+  .btn-main:hover{ filter:brightness(1.1); transform:translateY(-1px); }
+  .btn-main:disabled{ opacity:.4; cursor:not-allowed; transform:none; }
+  .btn-icon{ width:50px; height:50px; border-radius:12px; background:var(--surface);
+             border:1px solid var(--border); color:var(--muted); font-size:1rem;
+             cursor:pointer; transition:all .2s; display:flex; align-items:center;
+             justify-content:center; flex-shrink:0; }
+  .btn-icon:hover{ border-color:var(--accent); color:var(--accent); }
+  .info-note{ font-size:.7rem; color:var(--muted); text-align:center; line-height:1.5; }
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>Coach du <em>Soir</em></h1>
+    <p>5 minutes · Abdos · Dos · Nuque</p>
+  </div>
+
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-fill" id="progressBar"></div>
+  </div>
+
+  <div id="phaseBadge" class="phase-badge">
+    <span class="phase-dot"></span>
+    <span id="phaseName">Prêt à commencer</span>
+  </div>
+
+  <div class="card">
+    <!-- Vue exercice -->
+    <div class="view" id="viewEx">
+      <div class="ex-name" id="exName">Programme du soir</div>
+      <div class="ex-desc" id="exDesc">Installe-toi confortablement. Respire profondément.</div>
+      <div class="timer-wrap">
+        <svg class="timer-svg" viewBox="0 0 120 120">
+          <circle class="timer-bg" cx="60" cy="60" r="54"/>
+          <circle class="timer-ring" id="ringEx" cx="60" cy="60" r="54"/>
+        </svg>
+        <div class="timer-num" id="numEx">
+          <span id="valEx">—</span>
+          <span class="timer-lbl">sec</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vue repos -->
+    <div class="view hidden" id="viewRest">
+      <div class="rest-emoji">😮‍💨</div>
+      <div class="rest-title">Récupération</div>
+      <div class="rest-hint" id="restHint">Reprends ton souffle</div>
+      <div class="timer-wrap">
+        <svg class="timer-svg" viewBox="0 0 120 120">
+          <circle class="timer-bg" cx="60" cy="60" r="54"/>
+          <circle class="timer-ring ring-rest" id="ringRest" cx="60" cy="60" r="54"/>
+        </svg>
+        <div class="timer-num" id="numRest">
+          <span id="valRest">—</span>
+          <span class="timer-lbl">sec</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vue fin -->
+    <div class="view hidden" id="viewFin">
+      <div class="fin-emoji">🌙</div>
+      <div class="fin-title">Bravo, c'est fait !</div>
+      <div class="fin-desc">5 minutes bien investies.<br>Bonne nuit et beau sommeil.</div>
+    </div>
+  </div>
+
+  <div class="steps-wrap" id="dots"></div>
+
+  <div class="voice-row">
+    <div class="vbars" id="vbars">
+      <div class="vbar"></div><div class="vbar"></div><div class="vbar"></div>
+      <div class="vbar"></div><div class="vbar"></div>
+    </div>
+    <span id="vStatus">Voix prête</span>
+  </div>
+
+  <div class="controls">
+    <button class="btn-icon" id="btnPrev">◀</button>
+    <button class="btn-main" id="btnStart">▶ Commencer</button>
+    <button class="btn-icon" id="btnSkip">▶▶</button>
+  </div>
+
+  <div class="info-note">🔊 Active le volume de ton appareil</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// PROGRAMME
+// ═══════════════════════════════════════════════════════════
+const STEPS = [
+  { phase:"abdo", name:"Gainage frontal",
+    desc:"Appui avant-bras + orteils. Corps droit, ventre rentré.",
+    dur:40,
+    intro:"On commence ! Gainage frontal. Mets-toi en appui sur tes avant-bras et tes orteils. Corps bien droit, ventre rentré. Tiens la position et respire calmement.",
+    mid:"Très bien, mi-parcours. Continue à respirer.", fin:"Parfait, relâche." },
+
+  { phase:"rest", name:"Récupération", desc:"Reprends ton souffle.", dur:10,
+    intro:"Dix secondes de récupération." },
+
+  { phase:"abdo", name:"Crunch lent",
+    desc:"Sur le dos, genoux pliés. Monte les épaules en expirant, redescends lentement.",
+    dur:40,
+    intro:"Crunch lent. Sur le dos, genoux pliés. Monte les épaules en expirant et redescends lentement. Le contrôle prime sur la vitesse.",
+    mid:"Bien joué. Garde ce rythme lent et régulier.", fin:"Super, pose la tête." },
+
+  { phase:"rest", name:"Récupération", desc:"Reprends ton souffle.", dur:10,
+    intro:"Dix secondes." },
+
+  { phase:"abdo", name:"Relevé de jambes",
+    desc:"Sur le dos, mains sous les fesses. Monte les jambes tendues à 90°, redescends lentement.",
+    dur:40,
+    intro:"Relevé de jambes. Sur le dos, mains sous les fesses. Monte les jambes tendues et redescends lentement sans toucher le sol.",
+    mid:"Continue, tu y es presque. Souffle à chaque montée.", fin:"Excellent. Repose les jambes." },
+
+  { phase:"rest", name:"Récupération", desc:"On passe au dos.", dur:15,
+    intro:"Quinze secondes bien méritées. On attaque le bloc dos juste après." },
+
+  { phase:"dos", name:"Chat / Vache",
+    desc:"À quatre pattes. Inspire en creusant le dos, expire en arrondissant.",
+    dur:45,
+    intro:"Chat vache. À quatre pattes. Inspire en creusant le dos, expire en arrondissant comme un chat. Lent et fluide.",
+    mid:"Très bien. Synchronise ta respiration avec le mouvement.", fin:"Excellent. Reviens en position neutre." },
+
+  { phase:"rest", name:"Récupération", desc:"Reprends ton souffle.", dur:10,
+    intro:"Dix secondes." },
+
+  { phase:"dos", name:"Torsion lombaire",
+    desc:"Sur le dos, genoux pliés. Laisse tomber les genoux d'un côté, regarde à l'opposé.",
+    dur:45,
+    intro:"Torsion lombaire. Sur le dos, genoux pliés. Laisse tomber les genoux à droite, tête à gauche. Respire et relâche.",
+    mid:"Change de côté maintenant. Genoux à gauche, regard à droite.", fin:"Parfait. Reviens au centre." },
+
+  { phase:"rest", name:"Récupération", desc:"Dernier bloc, on détend la nuque.", dur:10,
+    intro:"Dix secondes. Dernier bloc, on prend soin de la nuque." },
+
+  { phase:"nuque", name:"Étirement latéral nuque",
+    desc:"Penche la tête vers l'épaule. Main sur l'oreille. 15 sec par côté.",
+    dur:30,
+    intro:"Étirement latéral. Penche la tête vers l'épaule droite. Pose la main sur l'oreille. Laisse le poids de la tête faire le travail.",
+    mid:"Change de côté. Tête vers l'épaule gauche.", fin:"Bien. Reviens au centre." },
+
+  { phase:"nuque", name:"Rotation nuque",
+    desc:"Tourne la tête lentement de gauche à droite. 3 à 4 rotations.",
+    dur:30,
+    intro:"Dernier exercice. Rotation de nuque. Tourne la tête lentement de gauche à droite. Épaules basses, très relâché.",
+    mid:"Continue doucement.", fin:"C'est terminé pour ce soir. Bravo, tu as tout fait." }
+];
+
+const TOTAL_DUR = STEPS.reduce((s,e)=>s+e.dur, 0);
+const CIRC = 339.3; // 2π×54
+
+// ═══════════════════════════════════════════════════════════
+// AUDIO
+// ═══════════════════════════════════════════════════════════
+let actx = null;
+function getACtx(){
+  if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)();
+  return actx;
+}
+function tone(freq, dur, vol, type='sine'){
+  try{
+    const c=getACtx(), o=c.createOscillator(), g=c.createGain();
+    o.connect(g); g.connect(c.destination);
+    o.type=type; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime+dur);
+    o.start(); o.stop(c.currentTime+dur);
+  }catch(e){}
+}
+const beepTick = ()=> tone(1100, 0.05, 0.12);
+const beepEnd  = ()=> tone(280,  0.22, 0.4, 'triangle');
+const beepDone = ()=>{ tone(660, 0.1, 0.28); setTimeout(()=>tone(990,0.18,0.35),140); };
+
+// ═══════════════════════════════════════════════════════════
+// VOIX
+// ═══════════════════════════════════════════════════════════
+const elVbars  = document.getElementById('vbars');
+const elVStat  = document.getElementById('vStatus');
+
+function speak(text, cb){
+  if(!window.speechSynthesis){ if(cb)cb(); return; }
+  window.speechSynthesis.cancel();
+  setTimeout(()=>{
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang='fr-FR'; u.rate=0.87; u.pitch=1.05; u.volume=1.0;
+    const all = window.speechSynthesis.getVoices();
+    const pref = ['Thomas','Amélie','Amira','Marie','Virginie','Nicolas','Remy','Rémy'];
+    let v = null;
+    for(const n of pref){ v=all.find(x=>x.name.includes(n)&&x.lang.startsWith('fr')); if(v)break; }
+    if(!v) v=all.find(x=>x.lang==='fr-FR');
+    if(!v) v=all.find(x=>x.lang.startsWith('fr'));
+    if(v) u.voice=v;
+    elVbars.classList.add('on'); elVStat.textContent='En train de parler…';
+    u.onend=u.onerror=()=>{ elVbars.classList.remove('on'); elVStat.textContent='Voix active'; if(cb)cb(); };
+    window.speechSynthesis.speak(u);
+  }, 80);
+}
+if(window.speechSynthesis){
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged=()=>window.speechSynthesis.getVoices();
+}
+
+// ═══════════════════════════════════════════════════════════
+// ÉTAT
+// Chaque étape a deux phases :
+//   "intro"   → voix parle, timer figé
+//   "counting" → timer décompte
+// ═══════════════════════════════════════════════════════════
+let stepIdx   = 0;
+let timeLeft  = 0;
+let elapsed   = 0;
+let running   = false;
+let phase     = 'idle';   // 'idle' | 'intro' | 'counting' | 'done'
+let ticker    = null;
+
+// ═══════════════════════════════════════════════════════════
+// DOM
+// ═══════════════════════════════════════════════════════════
+const elProgress = document.getElementById('progressBar');
+const elBadge    = document.getElementById('phaseBadge');
+const elPhName   = document.getElementById('phaseName');
+const elDots     = document.getElementById('dots');
+const elBtnStart = document.getElementById('btnStart');
+const elBtnPrev  = document.getElementById('btnPrev');
+const elBtnSkip  = document.getElementById('btnSkip');
+
+const viewEx   = document.getElementById('viewEx');
+const viewRest = document.getElementById('viewRest');
+const viewFin  = document.getElementById('viewFin');
+
+const elExName  = document.getElementById('exName');
+const elExDesc  = document.getElementById('exDesc');
+const elRingEx  = document.getElementById('ringEx');
+const elNumEx   = document.getElementById('numEx');
+const elValEx   = document.getElementById('valEx');
+
+const elRestHint = document.getElementById('restHint');
+const elRingRest = document.getElementById('ringRest');
+const elNumRest  = document.getElementById('numRest');
+const elValRest  = document.getElementById('valRest');
+
+elRingEx.style.strokeDasharray   = CIRC;
+elRingRest.style.strokeDasharray = CIRC;
+
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+const BADGE = {
+  abdo:'💪 Abdominaux', dos:'🔄 Mobilisation dos',
+  nuque:'✨ Détente nuque', rest:'⏸ Récupération'
+};
+
+function showView(name){
+  viewEx.classList.toggle('hidden',   name!=='ex');
+  viewRest.classList.toggle('hidden', name!=='rest');
+  viewFin.classList.toggle('hidden',  name!=='fin');
+}
+function setRing(ring, ratio, extra){
+  ring.style.strokeDashoffset = CIRC*(1-Math.max(0,Math.min(1,ratio)));
+  ring.className = 'timer-ring' + (extra?' '+extra:'');
+}
+function setBadge(p){
+  elBadge.className='phase-badge'+(p?' '+p:'');
+  elPhName.textContent=BADGE[p]||p;
+}
+function buildDots(){
+  elDots.innerHTML='';
+  STEPS.forEach((s,i)=>{
+    if(s.phase==='rest') return;
+    const d=document.createElement('div');
+    d.className='step-dot'; d.dataset.i=i; elDots.appendChild(d);
+  });
+}
+function updateDots(){
+  let k=0;
+  STEPS.forEach((s,i)=>{
+    if(s.phase==='rest') return;
+    const d=elDots.querySelectorAll('.step-dot')[k++]; if(!d)return;
+    d.className='step-dot'+(i<stepIdx?' done':i===stepIdx?' active':'');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// AFFICHAGE D'UNE ÉTAPE (sans démarrer le timer)
+// ═══════════════════════════════════════════════════════════
+function renderStep(i){
+  const s = STEPS[i];
+  const isRest = s.phase==='rest';
+  timeLeft = s.dur;
+
+  if(isRest){
+    showView('rest');
+    elRestHint.textContent = s.desc;
+    elValRest.textContent  = timeLeft;
+    elNumRest.className    = 'timer-num';
+    setRing(elRingRest, 1, 'ring-rest');
+  } else {
+    showView('ex');
+    elExName.style.opacity=0; elExDesc.style.opacity=0;
+    setTimeout(()=>{
+      elExName.textContent=s.name; elExDesc.textContent=s.desc;
+      elExName.style.opacity=1; elExDesc.style.opacity=1;
+    },180);
+    elValEx.textContent  = timeLeft;
+    elNumEx.className    = 'timer-num';
+    setRing(elRingEx, 1, '');
+  }
+  setBadge(s.phase);
+  updateDots();
+}
+
+// ═══════════════════════════════════════════════════════════
+// LANCEMENT D'UNE ÉTAPE
+// Séquence : affiche → joue intro → démarre décompte
+// ═══════════════════════════════════════════════════════════
+function startStep(i){
+  if(i>=STEPS.length){ endWorkout(); return; }
+  stepIdx=i;
+  renderStep(i);
+  const s=STEPS[i];
+
+  // Phase intro : on joue la voix, le ticker ne tourne pas encore
+  phase='intro';
+  speak(s.intro, ()=>{
+    // Voix terminée → on démarre le décompte seulement si on est toujours en cours
+    if(running && phase==='intro'){
+      phase='counting';
+      ticker=setInterval(tick, 1000);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// TICK — appelé chaque seconde pendant le décompte
+// ═══════════════════════════════════════════════════════════
+function tick(){
+  const s=STEPS[stepIdx];
+  const isRest=(s.phase==='rest');
+  const ending=(!isRest && timeLeft<=5 && timeLeft>0);
+
+  elapsed++;
+  elProgress.style.width=Math.min(100,(elapsed/TOTAL_DUR)*100)+'%';
+
+  // Bips
+  if(!isRest && timeLeft>0){ ending ? beepEnd() : beepTick(); }
+
+  // Mi-parcours
+  if(s.mid && timeLeft===Math.floor(s.dur/2)) speak(s.mid);
+
+  // Décrémenter
+  timeLeft--;
+
+  // Affichage
+  if(isRest){
+    elValRest.textContent=Math.max(0,timeLeft);
+    setRing(elRingRest, timeLeft/s.dur, 'ring-rest');
+  } else {
+    elValEx.textContent=Math.max(0,timeLeft);
+    elNumEx.className='timer-num'+(ending?' ending':'');
+    setRing(elRingEx, timeLeft/s.dur, ending?'ring-ending':'');
+  }
+
+  // Fin du décompte
+  if(timeLeft<=0){
+    clearInterval(ticker); ticker=null; phase='idle';
+    if(!isRest){
+      beepDone();
+      if(s.fin) speak(s.fin, ()=>{ if(running) startStep(stepIdx+1); });
+      else      if(running) startStep(stepIdx+1);
+    } else {
+      // Repos terminé → exercice suivant directement
+      if(running) startStep(stepIdx+1);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// FIN DU PROGRAMME
+// ═══════════════════════════════════════════════════════════
+function endWorkout(){
+  running=false; phase='done';
+  clearInterval(ticker); ticker=null;
+  showView('fin');
+  setBadge('nuque'); elPhName.textContent='🌙 Terminé';
+  elProgress.style.width='100%';
+  elBtnStart.textContent='✓ Terminé !'; elBtnStart.disabled=true;
+  beepDone(); setTimeout(beepDone,450);
+  setTimeout(()=>speak("C'est terminé pour ce soir. Bravo, tu as tout fait. Bonne nuit et beau sommeil."),800);
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONTRÔLES
+// ═══════════════════════════════════════════════════════════
+function startPause(){
+  if(!actx) getACtx();
+
+  if(!running){
+    running=true;
+    elBtnStart.textContent='⏸ Pause';
+    if(phase==='idle'){
+      startStep(stepIdx);
+    } else if(phase==='counting'){
+      ticker=setInterval(tick,1000);
+    }
+    // si phase==='intro' la voix reprend automatiquement via le callback
+  } else {
+    running=false;
+    elBtnStart.textContent='▶ Reprendre';
+    clearInterval(ticker); ticker=null;
+    window.speechSynthesis.cancel();
+    elVbars.classList.remove('on'); elVStat.textContent='En pause';
+    // En pause on reste dans la phase courante
+  }
+}
+
+elBtnStart.addEventListener('click', startPause);
+
+elBtnSkip.addEventListener('click', ()=>{
+  if(stepIdx<STEPS.length-1){
+    clearInterval(ticker); ticker=null;
+    window.speechSynthesis.cancel();
+    elVbars.classList.remove('on');
+    if(running){ startStep(stepIdx+1); }
+    else        { stepIdx++; renderStep(stepIdx); phase='idle'; }
+  }
+});
+
+elBtnPrev.addEventListener('click', ()=>{
+  if(stepIdx>0){
+    clearInterval(ticker); ticker=null;
+    window.speechSynthesis.cancel();
+    elVbars.classList.remove('on');
+    stepIdx--;
+    if(running){ startStep(stepIdx); }
+    else        { renderStep(stepIdx); phase='idle'; }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+buildDots();
+renderStep(0);
+</script>
+</body>
+</html>
