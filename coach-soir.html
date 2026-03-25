@@ -339,11 +339,20 @@ function tone(freq, dur, vol, type='sine'){
   }
 }
 
-const beepTick = ()=> tone(1100, 0.05, 0.12);
-const beepEnd  = ()=> tone(280,  0.22, 0.4, 'triangle');
+// Sur iOS, AudioContext est muté par speechSynthesis.
+// On force les bips via Audio + dataURI qui passe par un canal indépendant.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+const beepTick = ()=> isIOS ? playBeepDataURI(1100, 50,  0.5) : tone(1100, 0.05, 0.12);
+const beepEnd  = ()=> isIOS ? playBeepDataURI(280,  220, 0.7) : tone(280,  0.22, 0.4, 'triangle');
 const beepDone = ()=>{
-  tone(660, 0.1, 0.28);
-  setTimeout(()=>tone(990, 0.18, 0.35), 140);
+  if(isIOS){
+    playBeepDataURI(660, 100, 0.7);
+    setTimeout(()=>playBeepDataURI(990, 180, 0.7), 140);
+  } else {
+    tone(660, 0.1, 0.28);
+    setTimeout(()=>tone(990, 0.18, 0.35), 140);
+  }
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -596,7 +605,7 @@ function tick(){
         // On N'utilise PAS onend comme déclencheur car iOS peut l'appeler
         // de façon réentrante via cancel() dans le prochain startStep.
         speak(s.fin);
-        const estimatedMs = Math.max(1500, s.fin.length * 65);
+        const estimatedMs = Math.max(2500, s.fin.length * 90);
         setTimeout(()=>{ if(running) startStep(nextIdx); }, estimatedMs);
       } else {
         if(running) startStep(nextIdx);
