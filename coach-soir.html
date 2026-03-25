@@ -243,120 +243,79 @@ const TOTAL_DUR = STEPS.reduce((s,e)=>s+e.dur, 0);
 const CIRC = 339.3;
 
 // ═══════════════════════════════════════════════════════════
-// AUDIO — Approche hybride : AudioContext + fallback HTML Audio
-// iOS Safari bloque AudioContext même après unlock si le contexte
-// n'est pas maintenu actif. On utilise AudioContext quand possible,
-// sinon on génère un bip via un élément Audio avec data URI.
+// AUDIO
+// iOS interdit Audio.play() hors geste utilisateur direct.
+// Solution : pré-créer des éléments Audio et les jouer une fois
+// à volume 0 au tap "Commencer" pour les déverrouiller,
+// puis les réutiliser librement ensuite.
 // ═══════════════════════════════════════════════════════════
-let actx = null;
-let audioUnlocked = false;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-function getACtx(){
-  if(!actx){
-    try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }
-    catch(e){ return null; }
+// Génère un WAV sinusoïdal en base64
+function makeWAV(freq, durationMs, vol){
+  const sr = 22050, n = Math.floor(sr * durationMs / 1000);
+  const buf = new ArrayBuffer(44 + n*2), v = new DataView(buf);
+  const ws = (o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+  ws(0,'RIFF'); v.setUint32(4,36+n*2,true); ws(8,'WAVE'); ws(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true);
+  v.setUint16(32,2,true); v.setUint16(34,16,true);
+  ws(36,'data'); v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++){
+    const t=i/sr, env=Math.min(1,Math.min(t*40,(durationMs/1000-t)*40));
+    v.setInt16(44+i*2, Math.max(-32767,Math.min(32767,Math.sin(2*Math.PI*freq*t)*vol*env*32767)), true);
   }
-  return actx;
+  const b=new Uint8Array(buf); let s='';
+  for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]);
+  return 'data:audio/wav;base64,'+btoa(s);
 }
 
-// Génère un bip WAV en base64 à la fréquence et durée données.
-// Utilisé comme fallback si AudioContext n'est pas disponible/déverrouillé.
-function makeBeepDataURI(freq, durationMs, vol){
-  const sampleRate = 22050;
-  const numSamples = Math.floor(sampleRate * durationMs / 1000);
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
-  const view = new DataView(buffer);
-  const writeStr = (off, str) => { for(let i=0;i<str.length;i++) view.setUint8(off+i, str.charCodeAt(i)); };
-  writeStr(0,'RIFF'); view.setUint32(4,36+numSamples*2,true);
-  writeStr(8,'WAVE'); writeStr(12,'fmt ');
-  view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true);
-  view.setUint32(24,sampleRate,true); view.setUint32(28,sampleRate*2,true);
-  view.setUint16(32,2,true); view.setUint16(34,16,true);
-  writeStr(36,'data'); view.setUint32(40,numSamples*2,true);
-  for(let i=0;i<numSamples;i++){
-    const t = i/sampleRate;
-    const env = Math.min(1, Math.min(t*40, (durationMs/1000-t)*40)); // attack/release
-    const sample = Math.sin(2*Math.PI*freq*t) * vol * env * 32767;
-    view.setInt16(44+i*2, Math.max(-32767,Math.min(32767,sample)), true);
-  }
-  const bytes = new Uint8Array(buffer);
-  let bin = ''; for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
-  return 'data:audio/wav;base64,' + btoa(bin);
-}
+// Pool d'éléments Audio pré-créés
+const _pool = {
+  tick:  new Audio(makeWAV(1100, 55,  0.8)),
+  end:   new Audio(makeWAV(280,  220, 0.9)),
+  done1: new Audio(makeWAV(660,  110, 0.9)),
+  done2: new Audio(makeWAV(990,  180, 0.9)),
+};
 
-// Cache des data URI pour éviter de les recalculer à chaque bip
-const _beepCache = {};
-function playBeepDataURI(freq, durationMs, vol){
-  const key = freq+'_'+durationMs+'_'+vol;
-  if(!_beepCache[key]) _beepCache[key] = makeBeepDataURI(freq, durationMs, vol);
-  const a = new Audio(_beepCache[key]);
-  a.volume = 1.0;
-  console.log('[beep] playing freq='+freq+' dur='+durationMs);
-  a.play().then(()=>{
-    console.log('[beep] play OK');
-  }).catch((e)=>{
-    console.log('[beep] play ERREUR:', e.name, e.message);
+// Déverrouille tous les éléments du pool dans le contexte d'un geste utilisateur
+function unlockAudio(){
+  Object.values(_pool).forEach(a=>{
+    a.volume = 0.001;
+    a.play().then(()=>{ a.pause(); a.currentTime=0; a.volume=1.0; }).catch(()=>{});
   });
 }
 
-function unlockAudio(){
-  if(audioUnlocked) return;
-  const ctx = getACtx();
-  console.log('[audio] unlockAudio ctx.state=', ctx ? ctx.state : 'null');
-  if(!ctx){ audioUnlocked = true; return; }
-  if(ctx.state === 'suspended') ctx.resume().catch((e)=>{ console.log('[audio] resume err', e); });
-  try{
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.frequency.value = 440;
-    g.gain.setValueAtTime(0.001, ctx.currentTime);
-    o.start(ctx.currentTime);
-    o.stop(ctx.currentTime + 0.05);
-    audioUnlocked = true;
-    console.log('[audio] unlocked OK, state now=', ctx.state);
-  }catch(e){ console.log('[audio] unlock err', e); }
+function playPooled(key){
+  const a = _pool[key];
+  if(!a) return;
+  a.currentTime = 0;
+  a.volume = 1.0;
+  a.play().catch(()=>{});
 }
 
-// Sur iOS, AudioContext reste suspendu et est muté par speechSynthesis.
-// On bypass vers playBeepDataURI pour tous les bips.
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
+// AudioContext pour desktop uniquement
+let actx = null;
 function tone(freq, dur, vol, type='sine'){
-  // Sur iOS, AudioContext reste suspendu même après resume() et est muté par
-  // speechSynthesis. On bypass totalement vers playBeepDataURI sur iOS.
-  if(isIOS){
-    playBeepDataURI(freq, dur*1000, vol);
-    return;
-  }
-  const ctx = getACtx();
-  if(!ctx) return;
-  if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  if(isIOS) return; // iOS utilise le pool
+  if(!actx) try{ actx=new(window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+  if(actx.state==='suspended') actx.resume().catch(()=>{});
   try{
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = type;
-    o.frequency.value = freq;
-    const now = ctx.currentTime;
-    g.gain.setValueAtTime(vol, now);
-    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    o.start(now);
-    o.stop(now + dur);
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.connect(g); g.connect(actx.destination);
+    o.type=type; o.frequency.value=freq;
+    const now=actx.currentTime;
+    g.gain.setValueAtTime(vol,now);
+    g.gain.exponentialRampToValueAtTime(0.001,now+dur);
+    o.start(now); o.stop(now+dur);
   }catch(e){}
 }
 
-
-const beepTick = ()=> isIOS ? playBeepDataURI(1100, 50,  0.5) : tone(1100, 0.05, 0.12);
-const beepEnd  = ()=> isIOS ? playBeepDataURI(280,  220, 0.7) : tone(280,  0.22, 0.4, 'triangle');
+const beepTick = ()=> isIOS ? playPooled('tick')  : tone(1100, 0.05, 0.12);
+const beepEnd  = ()=> isIOS ? playPooled('end')   : tone(280,  0.22, 0.4, 'triangle');
 const beepDone = ()=>{
-  if(isIOS){
-    playBeepDataURI(660, 100, 0.7);
-    setTimeout(()=>playBeepDataURI(990, 180, 0.7), 140);
-  } else {
-    tone(660, 0.1, 0.28);
-    setTimeout(()=>tone(990, 0.18, 0.35), 140);
-  }
+  if(isIOS){ playPooled('done1'); setTimeout(()=>playPooled('done2'), 140); }
+  else     { tone(660,0.1,0.28); setTimeout(()=>tone(990,0.18,0.35), 140); }
 };
 
 // ═══════════════════════════════════════════════════════════
