@@ -529,6 +529,10 @@ function renderStep(i){
 function startStep(i){
   console.log('[step] startStep i='+i);
   if(i >= STEPS.length){ endWorkout(); return; }
+
+  // Arrêter tout ticker en cours avant toute chose
+  if(ticker){ clearInterval(ticker); ticker = null; }
+
   stepIdx = i;
   renderStep(i);
   const s = STEPS[i];
@@ -538,20 +542,19 @@ function startStep(i){
   phase = 'intro';
 
   if(isRest){
-    // Repos : voix et décompte en parallèle.
+    // Repos : lancer le décompte immédiatement, la voix joue en parallèle.
+    // On ne dépend PAS du callback onend (trop instable sur iOS).
     speak(s.intro);
-    setTimeout(()=>{
-      if(running){
-        phase = 'counting';
-        ticker = setInterval(tick, 1000);
-      }
-    }, 300);
+    phase = 'counting';
+    ticker = setInterval(tick, 1000);
+    console.log('[step] rest ticker started, timeLeft='+timeLeft);
   } else {
-    // Exercice : on attend la fin de la voix avant de décompter.
+    // Exercice : attendre la fin de la voix avant de décompter.
     speak(s.intro, ()=>{
       if(running && phase==='intro'){
         phase = 'counting';
         ticker = setInterval(tick, 1000);
+        console.log('[step] ex ticker started after speak');
       }
     });
   }
