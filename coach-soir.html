@@ -44,22 +44,17 @@
          align-items:center; justify-content:center; }
   .card::after{ content:''; position:absolute; top:0; left:0; right:0; height:1px;
                 background:linear-gradient(90deg,transparent,rgba(126,232,162,.2),transparent); }
-  /* ── vues ── */
   .view{ width:100%; display:flex; flex-direction:column; align-items:center; gap:6px; }
   .view.hidden{ display:none; }
-  /* exercice */
   .ex-name{ font-family:'DM Serif Display',serif; font-size:clamp(1.3rem,5vw,1.8rem);
             font-weight:400; line-height:1.2; transition:opacity .25s; }
   .ex-desc{ font-size:.82rem; color:var(--muted); line-height:1.6; transition:opacity .25s; }
-  /* repos */
   .rest-emoji{ font-size:2.4rem; line-height:1; }
   .rest-title{ font-family:'DM Serif Display',serif; font-size:1.6rem; font-weight:400; color:var(--rest); }
   .rest-hint { font-size:.82rem; color:var(--muted); }
-  /* fin */
   .fin-emoji{ font-size:2.8rem; }
   .fin-title{ font-family:'DM Serif Display',serif; font-size:1.7rem; font-weight:400; }
   .fin-desc { font-size:.86rem; color:var(--muted); line-height:1.6; }
-  /* timer */
   .timer-wrap{ margin-top:18px; position:relative; width:120px; height:120px; }
   .timer-svg{ width:120px; height:120px; transform:rotate(-90deg); }
   .timer-bg  { fill:none; stroke:var(--border); stroke-width:6; }
@@ -74,12 +69,10 @@
   .timer-num.ending{ color:var(--accent3); }
   .timer-lbl{ font-family:'DM Sans',sans-serif; font-size:.6rem; color:var(--muted);
               letter-spacing:.1em; text-transform:uppercase; margin-top:2px; }
-  /* dots */
   .steps-wrap{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
   .step-dot{ width:7px; height:7px; border-radius:50%; background:var(--border); transition:all .3s; }
   .step-dot.done  { background:var(--accent); }
   .step-dot.active{ background:var(--accent); transform:scale(1.6); }
-  /* voice */
   .voice-row{ display:flex; align-items:center; gap:8px; font-size:.76rem; color:var(--muted);
               padding:7px 14px; background:var(--surface); border:1px solid var(--border);
               border-radius:8px; width:100%; justify-content:center; }
@@ -93,7 +86,6 @@
   .vbar:nth-child(5){ height:4px;  animation-delay:0s; }
   .vbars.on .vbar{ opacity:1; }
   @keyframes va{ from{transform:scaleY(.3)} to{transform:scaleY(1)} }
-  /* controls */
   .controls{ display:flex; gap:10px; align-items:center; width:100%; }
   .btn-main{ flex:1; padding:15px 20px; background:var(--accent); color:#0d1117; border:none;
              border-radius:12px; font-family:'DM Sans',sans-serif; font-size:.92rem;
@@ -127,7 +119,6 @@
   </div>
 
   <div class="card">
-    <!-- Vue exercice -->
     <div class="view" id="viewEx">
       <div class="ex-name" id="exName">Programme du soir</div>
       <div class="ex-desc" id="exDesc">Installe-toi confortablement. Respire profondément.</div>
@@ -143,7 +134,6 @@
       </div>
     </div>
 
-    <!-- Vue repos -->
     <div class="view hidden" id="viewRest">
       <div class="rest-emoji">😮‍💨</div>
       <div class="rest-title">Récupération</div>
@@ -160,7 +150,6 @@
       </div>
     </div>
 
-    <!-- Vue fin -->
     <div class="view hidden" id="viewFin">
       <div class="fin-emoji">🌙</div>
       <div class="fin-title">Bravo, c'est fait !</div>
@@ -251,29 +240,71 @@ const STEPS = [
 ];
 
 const TOTAL_DUR = STEPS.reduce((s,e)=>s+e.dur, 0);
-const CIRC = 339.3; // 2π×54
+const CIRC = 339.3;
 
 // ═══════════════════════════════════════════════════════════
-// AUDIO
+// AUDIO — Fix mobile : déverrouillage synchrone au premier tap
 // ═══════════════════════════════════════════════════════════
 let actx = null;
+let audioUnlocked = false;
+
 function getACtx(){
-  if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)();
+  if(!actx){
+    try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }
+    catch(e){ return null; }
+  }
   return actx;
 }
-function tone(freq, dur, vol, type='sine'){
+
+// Joue un son silencieux pour "déverrouiller" l'AudioContext mobile.
+// Doit être appelé DIRECTEMENT dans un gestionnaire d'événement utilisateur (onclick, touchstart).
+function unlockAudio(){
+  if(audioUnlocked) return;
+  const ctx = getACtx();
+  if(!ctx) return;
+
+  // Sur iOS, l'AudioContext démarre en état "suspended" même après création.
+  // resume() doit être appelé dans le même gestionnaire synchrone.
+  if(ctx.state === 'suspended'){
+    ctx.resume().catch(()=>{});
+  }
+
+  // Joue un buffer vide d'une frame : débloque le pipeline audio iOS/Android
   try{
-    const c=getACtx(), o=c.createOscillator(), g=c.createGain();
-    o.connect(g); g.connect(c.destination);
-    o.type=type; o.frequency.value=freq;
-    g.gain.setValueAtTime(vol, c.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime+dur);
-    o.start(); o.stop(c.currentTime+dur);
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    audioUnlocked = true;
   }catch(e){}
 }
+
+function tone(freq, dur, vol, type='sine'){
+  const ctx = getACtx();
+  if(!ctx) return;
+  // Résume si suspendu (Android Chrome peut suspendre en arrière-plan)
+  if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  try{
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = type;
+    o.frequency.value = freq;
+    const now = ctx.currentTime;
+    g.gain.setValueAtTime(vol, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    o.start(now);
+    o.stop(now + dur);
+  }catch(e){}
+}
+
 const beepTick = ()=> tone(1100, 0.05, 0.12);
 const beepEnd  = ()=> tone(280,  0.22, 0.4, 'triangle');
-const beepDone = ()=>{ tone(660, 0.1, 0.28); setTimeout(()=>tone(990,0.18,0.35),140); };
+const beepDone = ()=>{
+  tone(660, 0.1, 0.28);
+  setTimeout(()=>tone(990, 0.18, 0.35), 140);
+};
 
 // ═══════════════════════════════════════════════════════════
 // VOIX
@@ -282,40 +313,60 @@ const elVbars  = document.getElementById('vbars');
 const elVStat  = document.getElementById('vStatus');
 
 function speak(text, cb){
-  if(!window.speechSynthesis){ if(cb)cb(); return; }
+  if(!window.speechSynthesis){ if(cb) cb(); return; }
   window.speechSynthesis.cancel();
+
+  // Délai court pour laisser cancel() prendre effet (nécessaire sur iOS)
   setTimeout(()=>{
     const u = new SpeechSynthesisUtterance(text);
-    u.lang='fr-FR'; u.rate=0.87; u.pitch=1.05; u.volume=1.0;
-    const all = window.speechSynthesis.getVoices();
+    u.lang    = 'fr-FR';
+    u.rate    = 0.87;
+    u.pitch   = 1.05;
+    u.volume  = 1.0;
+
+    const all  = window.speechSynthesis.getVoices();
     const pref = ['Thomas','Amélie','Amira','Marie','Virginie','Nicolas','Remy','Rémy'];
     let v = null;
-    for(const n of pref){ v=all.find(x=>x.name.includes(n)&&x.lang.startsWith('fr')); if(v)break; }
-    if(!v) v=all.find(x=>x.lang==='fr-FR');
-    if(!v) v=all.find(x=>x.lang.startsWith('fr'));
-    if(v) u.voice=v;
-    elVbars.classList.add('on'); elVStat.textContent='En train de parler…';
-    u.onend=u.onerror=()=>{ elVbars.classList.remove('on'); elVStat.textContent='Voix active'; if(cb)cb(); };
+    for(const n of pref){ v = all.find(x=>x.name.includes(n) && x.lang.startsWith('fr')); if(v) break; }
+    if(!v) v = all.find(x=>x.lang==='fr-FR');
+    if(!v) v = all.find(x=>x.lang.startsWith('fr'));
+    if(v) u.voice = v;
+
+    elVbars.classList.add('on');
+    elVStat.textContent = 'En train de parler…';
+
+    u.onend = u.onerror = ()=>{
+      elVbars.classList.remove('on');
+      elVStat.textContent = 'Voix active';
+      if(cb) cb();
+    };
+
+    // Workaround iOS : speechSynthesis se fige parfois après ~15 sec.
+    // On re-check toutes les 250 ms et on "tape" pour le réveiller.
+    const wdTimer = setInterval(()=>{
+      if(!window.speechSynthesis.speaking){ clearInterval(wdTimer); return; }
+      window.speechSynthesis.pause();
+      window.speechSynthesis.resume();
+    }, 250);
+
     window.speechSynthesis.speak(u);
   }, 80);
 }
+
 if(window.speechSynthesis){
   window.speechSynthesis.getVoices();
-  window.speechSynthesis.onvoiceschanged=()=>window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = ()=> window.speechSynthesis.getVoices();
 }
 
 // ═══════════════════════════════════════════════════════════
 // ÉTAT
-// Chaque étape a deux phases :
-//   "intro"   → voix parle, timer figé
-//   "counting" → timer décompte
 // ═══════════════════════════════════════════════════════════
-let stepIdx   = 0;
-let timeLeft  = 0;
-let elapsed   = 0;
-let running   = false;
-let phase     = 'idle';   // 'idle' | 'intro' | 'counting' | 'done'
-let ticker    = null;
+let stepIdx  = 0;
+let timeLeft = 0;
+let elapsed  = 0;
+let running  = false;
+let phase    = 'idle';  // 'idle' | 'intro' | 'counting' | 'done'
+let ticker   = null;
 
 // ═══════════════════════════════════════════════════════════
 // DOM
@@ -332,11 +383,11 @@ const viewEx   = document.getElementById('viewEx');
 const viewRest = document.getElementById('viewRest');
 const viewFin  = document.getElementById('viewFin');
 
-const elExName  = document.getElementById('exName');
-const elExDesc  = document.getElementById('exDesc');
-const elRingEx  = document.getElementById('ringEx');
-const elNumEx   = document.getElementById('numEx');
-const elValEx   = document.getElementById('valEx');
+const elExName   = document.getElementById('exName');
+const elExDesc   = document.getElementById('exDesc');
+const elRingEx   = document.getElementById('ringEx');
+const elNumEx    = document.getElementById('numEx');
+const elValEx    = document.getElementById('valEx');
 
 const elRestHint = document.getElementById('restHint');
 const elRingRest = document.getElementById('ringRest');
@@ -360,32 +411,35 @@ function showView(name){
   viewFin.classList.toggle('hidden',  name!=='fin');
 }
 function setRing(ring, ratio, extra){
-  ring.style.strokeDashoffset = CIRC*(1-Math.max(0,Math.min(1,ratio)));
-  ring.className = 'timer-ring' + (extra?' '+extra:'');
+  ring.style.strokeDashoffset = CIRC*(1 - Math.max(0, Math.min(1, ratio)));
+  ring.className = 'timer-ring' + (extra ? ' '+extra : '');
 }
 function setBadge(p){
-  elBadge.className='phase-badge'+(p?' '+p:'');
-  elPhName.textContent=BADGE[p]||p;
+  elBadge.className = 'phase-badge' + (p ? ' '+p : '');
+  elPhName.textContent = BADGE[p] || p;
 }
 function buildDots(){
-  elDots.innerHTML='';
+  elDots.innerHTML = '';
   STEPS.forEach((s,i)=>{
     if(s.phase==='rest') return;
-    const d=document.createElement('div');
-    d.className='step-dot'; d.dataset.i=i; elDots.appendChild(d);
+    const d = document.createElement('div');
+    d.className = 'step-dot';
+    d.dataset.i = i;
+    elDots.appendChild(d);
   });
 }
 function updateDots(){
-  let k=0;
+  let k = 0;
   STEPS.forEach((s,i)=>{
     if(s.phase==='rest') return;
-    const d=elDots.querySelectorAll('.step-dot')[k++]; if(!d)return;
-    d.className='step-dot'+(i<stepIdx?' done':i===stepIdx?' active':'');
+    const d = elDots.querySelectorAll('.step-dot')[k++];
+    if(!d) return;
+    d.className = 'step-dot' + (i<stepIdx ? ' done' : i===stepIdx ? ' active' : '');
   });
 }
 
 // ═══════════════════════════════════════════════════════════
-// AFFICHAGE D'UNE ÉTAPE (sans démarrer le timer)
+// AFFICHAGE D'UNE ÉTAPE
 // ═══════════════════════════════════════════════════════════
 function renderStep(i){
   const s = STEPS[i];
@@ -400,11 +454,14 @@ function renderStep(i){
     setRing(elRingRest, 1, 'ring-rest');
   } else {
     showView('ex');
-    elExName.style.opacity=0; elExDesc.style.opacity=0;
+    elExName.style.opacity = 0;
+    elExDesc.style.opacity = 0;
     setTimeout(()=>{
-      elExName.textContent=s.name; elExDesc.textContent=s.desc;
-      elExName.style.opacity=1; elExDesc.style.opacity=1;
-    },180);
+      elExName.textContent = s.name;
+      elExDesc.textContent = s.desc;
+      elExName.style.opacity = 1;
+      elExDesc.style.opacity = 1;
+    }, 180);
     elValEx.textContent  = timeLeft;
     elNumEx.className    = 'timer-num';
     setRing(elRingEx, 1, '');
@@ -415,64 +472,55 @@ function renderStep(i){
 
 // ═══════════════════════════════════════════════════════════
 // LANCEMENT D'UNE ÉTAPE
-// Séquence : affiche → joue intro → démarre décompte
 // ═══════════════════════════════════════════════════════════
 function startStep(i){
-  if(i>=STEPS.length){ endWorkout(); return; }
-  stepIdx=i;
+  if(i >= STEPS.length){ endWorkout(); return; }
+  stepIdx = i;
   renderStep(i);
-  const s=STEPS[i];
+  const s = STEPS[i];
 
-  // Phase intro : on joue la voix, le ticker ne tourne pas encore
-  phase='intro';
+  phase = 'intro';
   speak(s.intro, ()=>{
-    // Voix terminée → on démarre le décompte seulement si on est toujours en cours
     if(running && phase==='intro'){
-      phase='counting';
-      ticker=setInterval(tick, 1000);
+      phase = 'counting';
+      ticker = setInterval(tick, 1000);
     }
   });
 }
 
 // ═══════════════════════════════════════════════════════════
-// TICK — appelé chaque seconde pendant le décompte
+// TICK
 // ═══════════════════════════════════════════════════════════
 function tick(){
-  const s=STEPS[stepIdx];
-  const isRest=(s.phase==='rest');
-  const ending=(!isRest && timeLeft<=5 && timeLeft>0);
+  const s = STEPS[stepIdx];
+  const isRest = s.phase==='rest';
+  const ending = (!isRest && timeLeft<=5 && timeLeft>0);
 
   elapsed++;
-  elProgress.style.width=Math.min(100,(elapsed/TOTAL_DUR)*100)+'%';
+  elProgress.style.width = Math.min(100, (elapsed/TOTAL_DUR)*100) + '%';
 
-  // Bips
   if(!isRest && timeLeft>0){ ending ? beepEnd() : beepTick(); }
 
-  // Mi-parcours
   if(s.mid && timeLeft===Math.floor(s.dur/2)) speak(s.mid);
 
-  // Décrémenter
   timeLeft--;
 
-  // Affichage
   if(isRest){
-    elValRest.textContent=Math.max(0,timeLeft);
+    elValRest.textContent = Math.max(0, timeLeft);
     setRing(elRingRest, timeLeft/s.dur, 'ring-rest');
   } else {
-    elValEx.textContent=Math.max(0,timeLeft);
-    elNumEx.className='timer-num'+(ending?' ending':'');
-    setRing(elRingEx, timeLeft/s.dur, ending?'ring-ending':'');
+    elValEx.textContent = Math.max(0, timeLeft);
+    elNumEx.className   = 'timer-num' + (ending ? ' ending' : '');
+    setRing(elRingEx, timeLeft/s.dur, ending ? 'ring-ending' : '');
   }
 
-  // Fin du décompte
-  if(timeLeft<=0){
-    clearInterval(ticker); ticker=null; phase='idle';
+  if(timeLeft <= 0){
+    clearInterval(ticker); ticker = null; phase = 'idle';
     if(!isRest){
       beepDone();
       if(s.fin) speak(s.fin, ()=>{ if(running) startStep(stepIdx+1); });
       else      if(running) startStep(stepIdx+1);
     } else {
-      // Repos terminé → exercice suivant directement
       if(running) startStep(stepIdx+1);
     }
   }
@@ -482,47 +530,51 @@ function tick(){
 // FIN DU PROGRAMME
 // ═══════════════════════════════════════════════════════════
 function endWorkout(){
-  running=false; phase='done';
-  clearInterval(ticker); ticker=null;
+  running = false; phase = 'done';
+  clearInterval(ticker); ticker = null;
   showView('fin');
-  setBadge('nuque'); elPhName.textContent='🌙 Terminé';
-  elProgress.style.width='100%';
-  elBtnStart.textContent='✓ Terminé !'; elBtnStart.disabled=true;
-  beepDone(); setTimeout(beepDone,450);
-  setTimeout(()=>speak("C'est terminé pour ce soir. Bravo, tu as tout fait. Bonne nuit et beau sommeil."),800);
+  setBadge('nuque'); elPhName.textContent = '🌙 Terminé';
+  elProgress.style.width = '100%';
+  elBtnStart.textContent  = '✓ Terminé !';
+  elBtnStart.disabled     = true;
+  beepDone();
+  setTimeout(beepDone, 450);
+  setTimeout(()=>speak("C'est terminé pour ce soir. Bravo, tu as tout fait. Bonne nuit et beau sommeil."), 800);
 }
 
 // ═══════════════════════════════════════════════════════════
 // CONTRÔLES
 // ═══════════════════════════════════════════════════════════
 function startPause(){
-  if(!actx) getACtx();
+  // ── DÉVERROUILLAGE AUDIO MOBILE ──
+  // Doit rester ici, en premier, dans le gestionnaire synchrone du clic.
+  unlockAudio();
 
   if(!running){
-    running=true;
-    elBtnStart.textContent='⏸ Pause';
+    running = true;
+    elBtnStart.textContent = '⏸ Pause';
     if(phase==='idle'){
       startStep(stepIdx);
     } else if(phase==='counting'){
-      ticker=setInterval(tick,1000);
+      ticker = setInterval(tick, 1000);
     }
-    // si phase==='intro' la voix reprend automatiquement via le callback
   } else {
-    running=false;
-    elBtnStart.textContent='▶ Reprendre';
-    clearInterval(ticker); ticker=null;
-    window.speechSynthesis.cancel();
-    elVbars.classList.remove('on'); elVStat.textContent='En pause';
-    // En pause on reste dans la phase courante
+    running = false;
+    elBtnStart.textContent = '▶ Reprendre';
+    clearInterval(ticker); ticker = null;
+    if(window.speechSynthesis) window.speechSynthesis.cancel();
+    elVbars.classList.remove('on');
+    elVStat.textContent = 'En pause';
   }
 }
 
 elBtnStart.addEventListener('click', startPause);
 
 elBtnSkip.addEventListener('click', ()=>{
-  if(stepIdx<STEPS.length-1){
-    clearInterval(ticker); ticker=null;
-    window.speechSynthesis.cancel();
+  unlockAudio();
+  if(stepIdx < STEPS.length-1){
+    clearInterval(ticker); ticker = null;
+    if(window.speechSynthesis) window.speechSynthesis.cancel();
     elVbars.classList.remove('on');
     if(running){ startStep(stepIdx+1); }
     else        { stepIdx++; renderStep(stepIdx); phase='idle'; }
@@ -530,9 +582,10 @@ elBtnSkip.addEventListener('click', ()=>{
 });
 
 elBtnPrev.addEventListener('click', ()=>{
-  if(stepIdx>0){
-    clearInterval(ticker); ticker=null;
-    window.speechSynthesis.cancel();
+  unlockAudio();
+  if(stepIdx > 0){
+    clearInterval(ticker); ticker = null;
+    if(window.speechSynthesis) window.speechSynthesis.cancel();
     elVbars.classList.remove('on');
     stepIdx--;
     if(running){ startStep(stepIdx); }
