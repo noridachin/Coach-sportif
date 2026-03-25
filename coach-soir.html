@@ -291,7 +291,12 @@ function playBeepDataURI(freq, durationMs, vol){
   if(!_beepCache[key]) _beepCache[key] = makeBeepDataURI(freq, durationMs, vol);
   const a = new Audio(_beepCache[key]);
   a.volume = 1.0;
-  a.play().catch(()=>{});
+  console.log('[beep] playing freq='+freq+' dur='+durationMs);
+  a.play().then(()=>{
+    console.log('[beep] play OK');
+  }).catch((e)=>{
+    console.log('[beep] play ERREUR:', e.name, e.message);
+  });
 }
 
 function unlockAudio(){
