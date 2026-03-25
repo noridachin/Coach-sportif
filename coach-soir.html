@@ -313,14 +313,20 @@ function unlockAudio(){
   }catch(e){ console.log('[audio] unlock err', e); }
 }
 
+// Sur iOS, AudioContext reste suspendu et est muté par speechSynthesis.
+// On bypass vers playBeepDataURI pour tous les bips.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
 function tone(freq, dur, vol, type='sine'){
-  const ctx = getACtx();
-  console.log('[tone] freq='+freq+' ctx.state=', ctx ? ctx.state : 'null');
-  if(!ctx || (ctx.state === 'suspended')){
-    console.log('[tone] fallback dataURI');
+  // Sur iOS, AudioContext reste suspendu même après resume() et est muté par
+  // speechSynthesis. On bypass totalement vers playBeepDataURI sur iOS.
+  if(isIOS){
     playBeepDataURI(freq, dur*1000, vol);
     return;
   }
+  const ctx = getACtx();
+  if(!ctx) return;
+  if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try{
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -332,16 +338,9 @@ function tone(freq, dur, vol, type='sine'){
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
     o.start(now);
     o.stop(now + dur);
-    console.log('[tone] played via AudioContext');
-  }catch(e){
-    console.log('[tone] AudioContext err, fallback', e);
-    playBeepDataURI(freq, dur*1000, vol);
-  }
+  }catch(e){}
 }
 
-// Sur iOS, AudioContext est muté par speechSynthesis.
-// On force les bips via Audio + dataURI qui passe par un canal indépendant.
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
 const beepTick = ()=> isIOS ? playBeepDataURI(1100, 50,  0.5) : tone(1100, 0.05, 0.12);
 const beepEnd  = ()=> isIOS ? playBeepDataURI(280,  220, 0.7) : tone(280,  0.22, 0.4, 'triangle');
