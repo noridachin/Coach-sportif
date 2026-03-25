@@ -297,8 +297,9 @@ function playBeepDataURI(freq, durationMs, vol){
 function unlockAudio(){
   if(audioUnlocked) return;
   const ctx = getACtx();
+  console.log('[audio] unlockAudio ctx.state=', ctx ? ctx.state : 'null');
   if(!ctx){ audioUnlocked = true; return; }
-  if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  if(ctx.state === 'suspended') ctx.resume().catch((e)=>{ console.log('[audio] resume err', e); });
   try{
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -308,17 +309,18 @@ function unlockAudio(){
     o.start(ctx.currentTime);
     o.stop(ctx.currentTime + 0.05);
     audioUnlocked = true;
-  }catch(e){}
+    console.log('[audio] unlocked OK, state now=', ctx.state);
+  }catch(e){ console.log('[audio] unlock err', e); }
 }
 
 function tone(freq, dur, vol, type='sine'){
   const ctx = getACtx();
-  // Si AudioContext non disponible ou toujours suspendu après unlock, fallback data URI
+  console.log('[tone] freq='+freq+' ctx.state=', ctx ? ctx.state : 'null');
   if(!ctx || (ctx.state === 'suspended')){
+    console.log('[tone] fallback dataURI');
     playBeepDataURI(freq, dur*1000, vol);
     return;
   }
-  if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try{
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -330,7 +332,9 @@ function tone(freq, dur, vol, type='sine'){
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
     o.start(now);
     o.stop(now + dur);
+    console.log('[tone] played via AudioContext');
   }catch(e){
+    console.log('[tone] AudioContext err, fallback', e);
     playBeepDataURI(freq, dur*1000, vol);
   }
 }
@@ -355,6 +359,7 @@ function speak(text, cb){
   if(!window.speechSynthesis){ if(cb) cb(); return; }
   window.speechSynthesis.cancel();
   const gen = ++speakGen;
+  console.log('[speak] gen='+gen+' text='+text.substring(0,30));
 
   // Délai court pour laisser cancel() prendre effet (nécessaire sur iOS)
   setTimeout(()=>{
@@ -379,6 +384,7 @@ function speak(text, cb){
     elVStat.textContent = 'En train de parler…';
 
     u.onend = ()=>{
+      console.log('[speak] onend gen='+gen+' speakGen='+speakGen);
       if(gen !== speakGen) return; // utterance obsolète, on ignore
       elVbars.classList.remove('on');
       elVStat.textContent = 'Voix active';
@@ -521,11 +527,13 @@ function renderStep(i){
 // peut déclencher onend trop tôt, ce qui sautait le repos).
 // ═══════════════════════════════════════════════════════════
 function startStep(i){
+  console.log('[step] startStep i='+i);
   if(i >= STEPS.length){ endWorkout(); return; }
   stepIdx = i;
   renderStep(i);
   const s = STEPS[i];
   const isRest = s.phase === 'rest';
+  console.log('[step] phase='+s.phase+' dur='+s.dur+' isRest='+isRest);
 
   phase = 'intro';
 
