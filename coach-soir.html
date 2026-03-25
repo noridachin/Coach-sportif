@@ -243,7 +243,10 @@ const TOTAL_DUR = STEPS.reduce((s,e)=>s+e.dur, 0);
 const CIRC = 339.3;
 
 // ═══════════════════════════════════════════════════════════
-// AUDIO — Fix mobile : déverrouillage synchrone au premier tap
+// AUDIO — Approche hybride : AudioContext + fallback HTML Audio
+// iOS Safari bloque AudioContext même après unlock si le contexte
+// n'est pas maintenu actif. On utilise AudioContext quand possible,
+// sinon on génère un bip via un élément Audio avec data URI.
 // ═══════════════════════════════════════════════════════════
 let actx = null;
 let audioUnlocked = false;
@@ -256,21 +259,46 @@ function getACtx(){
   return actx;
 }
 
-// Joue un son silencieux pour "déverrouiller" l'AudioContext mobile.
-// Doit être appelé DIRECTEMENT dans un gestionnaire d'événement utilisateur (onclick, touchstart).
+// Génère un bip WAV en base64 à la fréquence et durée données.
+// Utilisé comme fallback si AudioContext n'est pas disponible/déverrouillé.
+function makeBeepDataURI(freq, durationMs, vol){
+  const sampleRate = 22050;
+  const numSamples = Math.floor(sampleRate * durationMs / 1000);
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
+  const writeStr = (off, str) => { for(let i=0;i<str.length;i++) view.setUint8(off+i, str.charCodeAt(i)); };
+  writeStr(0,'RIFF'); view.setUint32(4,36+numSamples*2,true);
+  writeStr(8,'WAVE'); writeStr(12,'fmt ');
+  view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true);
+  view.setUint32(24,sampleRate,true); view.setUint32(28,sampleRate*2,true);
+  view.setUint16(32,2,true); view.setUint16(34,16,true);
+  writeStr(36,'data'); view.setUint32(40,numSamples*2,true);
+  for(let i=0;i<numSamples;i++){
+    const t = i/sampleRate;
+    const env = Math.min(1, Math.min(t*40, (durationMs/1000-t)*40)); // attack/release
+    const sample = Math.sin(2*Math.PI*freq*t) * vol * env * 32767;
+    view.setInt16(44+i*2, Math.max(-32767,Math.min(32767,sample)), true);
+  }
+  const bytes = new Uint8Array(buffer);
+  let bin = ''; for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+  return 'data:audio/wav;base64,' + btoa(bin);
+}
+
+// Cache des data URI pour éviter de les recalculer à chaque bip
+const _beepCache = {};
+function playBeepDataURI(freq, durationMs, vol){
+  const key = freq+'_'+durationMs+'_'+vol;
+  if(!_beepCache[key]) _beepCache[key] = makeBeepDataURI(freq, durationMs, vol);
+  const a = new Audio(_beepCache[key]);
+  a.volume = 1.0;
+  a.play().catch(()=>{});
+}
+
 function unlockAudio(){
   if(audioUnlocked) return;
   const ctx = getACtx();
-  if(!ctx) return;
-
-  // Sur iOS, l'AudioContext démarre en état "suspended" même après création.
-  // resume() doit être appelé dans le même gestionnaire synchrone.
-  if(ctx.state === 'suspended'){
-    ctx.resume().catch(()=>{});
-  }
-
-  // iOS exige un vrai signal audio (pas un buffer vide) pour déverrouiller le pipeline.
-  // On joue une sinusoïde inaudible (volume 0.001) d'une durée minimale.
+  if(!ctx){ audioUnlocked = true; return; }
+  if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try{
     const o = ctx.createOscillator();
     const g = ctx.createGain();
@@ -278,15 +306,18 @@ function unlockAudio(){
     o.frequency.value = 440;
     g.gain.setValueAtTime(0.001, ctx.currentTime);
     o.start(ctx.currentTime);
-    o.stop(ctx.currentTime + 0.001);
+    o.stop(ctx.currentTime + 0.05);
     audioUnlocked = true;
   }catch(e){}
 }
 
 function tone(freq, dur, vol, type='sine'){
   const ctx = getACtx();
-  if(!ctx) return;
-  // Résume si suspendu (Android Chrome peut suspendre en arrière-plan)
+  // Si AudioContext non disponible ou toujours suspendu après unlock, fallback data URI
+  if(!ctx || (ctx.state === 'suspended')){
+    playBeepDataURI(freq, dur*1000, vol);
+    return;
+  }
   if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try{
     const o = ctx.createOscillator();
@@ -299,7 +330,9 @@ function tone(freq, dur, vol, type='sine'){
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
     o.start(now);
     o.stop(now + dur);
-  }catch(e){}
+  }catch(e){
+    playBeepDataURI(freq, dur*1000, vol);
+  }
 }
 
 const beepTick = ()=> tone(1100, 0.05, 0.12);
@@ -483,20 +516,37 @@ function renderStep(i){
 
 // ═══════════════════════════════════════════════════════════
 // LANCEMENT D'UNE ÉTAPE
+// Pour les exercices : voix d'abord, décompte après (séquence).
+// Pour les repos : voix ET décompte en parallèle (iOS speechSynthesis
+// peut déclencher onend trop tôt, ce qui sautait le repos).
 // ═══════════════════════════════════════════════════════════
 function startStep(i){
   if(i >= STEPS.length){ endWorkout(); return; }
   stepIdx = i;
   renderStep(i);
   const s = STEPS[i];
+  const isRest = s.phase === 'rest';
 
   phase = 'intro';
-  speak(s.intro, ()=>{
-    if(running && phase==='intro'){
-      phase = 'counting';
-      ticker = setInterval(tick, 1000);
-    }
-  });
+
+  if(isRest){
+    // Repos : voix et décompte en parallèle.
+    speak(s.intro);
+    setTimeout(()=>{
+      if(running){
+        phase = 'counting';
+        ticker = setInterval(tick, 1000);
+      }
+    }, 300);
+  } else {
+    // Exercice : on attend la fin de la voix avant de décompter.
+    speak(s.intro, ()=>{
+      if(running && phase==='intro'){
+        phase = 'counting';
+        ticker = setInterval(tick, 1000);
+      }
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
