@@ -590,8 +590,17 @@ function tick(){
     clearInterval(ticker); ticker = null; phase = 'idle';
     if(!isRest){
       beepDone();
-      if(s.fin) speak(s.fin, ()=>{ if(running) startStep(stepIdx+1); });
-      else      if(running) startStep(stepIdx+1);
+      const nextIdx = stepIdx + 1;
+      if(s.fin){
+        // Fire-and-forget : on parle, puis on enchaîne après une durée estimée.
+        // On N'utilise PAS onend comme déclencheur car iOS peut l'appeler
+        // de façon réentrante via cancel() dans le prochain startStep.
+        speak(s.fin);
+        const estimatedMs = Math.max(1500, s.fin.length * 65);
+        setTimeout(()=>{ if(running) startStep(nextIdx); }, estimatedMs);
+      } else {
+        if(running) startStep(nextIdx);
+      }
     } else {
       if(running) startStep(stepIdx+1);
     }
